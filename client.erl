@@ -129,7 +129,25 @@ do_join(State, Ref, ChatName) ->
 %% executes `/leave` protocol from client perspective
 do_leave(State, Ref, ChatName) ->
     io:format("client:do_leave(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	Chatroom_Value = maps:find(ChatName,State#cl_st.con_ch),
+	case Chatroom_Value of 
+		{ok,_}->
+			io:format("Chat Room is associated with client~n"),
+			whereis(server) ! {self(), Ref, leave,ChatName},
+			io:format("Message Sent to leave chatroom~n"),
+			receive
+				{_,Ref,ack_leave}->
+					Updated_Chat_Groups =  maps:remove(ChatName,State#cl_st.con_ch)
+			end;
+		error->
+			whereis(list_to_atom(State#cl_st.gui))!{result, self(), Ref, err},
+			Updated_Chat_Groups = State#cl_st.con_ch
+		end,
+		whereis(list_to_atom(State#cl_st.gui)) ! {result, self(), Ref, ok},
+    {ok_msg_received,#cl_st{
+		gui=State#cl_st.gui,
+		nick=State#cl_st.nick,
+		con_ch = Updated_Chat_Groups}}.
 
 %% executes `/nick` protocol from client perspective
 do_new_nick(State, Ref, NewNick) ->

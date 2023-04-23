@@ -105,7 +105,31 @@ do_join(ChatName, ClientPID, Ref, State) ->
 %% executes leave protocol from server perspective
 do_leave(ChatName, ClientPID, Ref, State) ->
     io:format("server:do_leave(...): IMPLEMENT ME~n"),
-    State.
+	Chatroom_PID_Tuple = maps:find(ChatName,State#serv_st.chatrooms),
+	Chatroom_PID = case Chatroom_PID_Tuple of
+		{ok, Chatroom_PID_Value}->
+			Chatroom_PID_Value;
+		error->
+			error
+		end,
+	
+	%Removing client from chatroom registration
+	Client_To_Chat_List_Tuple = maps:find(ChatName,State#serv_st.registrations),
+	Updated_Client_To_Chat_List_State = case Client_To_Chat_List_Tuple of
+		{ok,Client_To_Chat_List}->
+			Updated_Client_To_Chat_List =  lists:delete(Chatroom_PID,Client_To_Chat_List),
+			maps:put(ChatName,Updated_Client_To_Chat_List,State#serv_st.registrations)
+		end,
+	Chatroom_PID ! {self(), Ref, unregister, ClientPID},
+	receive
+		{removed_client_from_Chat}->
+			ClientPID ! {self(), Ref, ack_leave}
+		end,
+    #serv_st{
+		nicks = State#serv_st.nicks,
+		registrations = Updated_Client_To_Chat_List_State,
+		chatrooms =  State#serv_st.chatrooms
+		}.
 
 %% executes new nickname protocol from server perspective
 do_new_nick(State, Ref, ClientPID, NewNick) ->
