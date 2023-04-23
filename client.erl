@@ -81,7 +81,9 @@ loop(State, Request, Ref) ->
 
 	%% GUI requests the nickname of client
 	whoami ->
-	    {{dummy_target, dummy_response}, State};
+		io:format("In who am i block ~n"),
+	    whereis(list_to_atom(State#cl_st.gui)) ! {result, self(), Ref, State#cl_st.nick},
+		{ok_msg_received, State};
 
 	%% GUI requests to update nickname to Nick
 	{nick, Nick} ->
@@ -141,7 +143,7 @@ do_leave(State, Ref, ChatName) ->
 			end;
 		error->
 			whereis(list_to_atom(State#cl_st.gui))!{result, self(), Ref, err},
-			Updated_Chat_Groups = State#cl_st.con_ch
+			Updated_Chat_Groups =  #cl_st.con_ch
 		end,
 		whereis(list_to_atom(State#cl_st.gui)) ! {result, self(), Ref, ok},
     {ok_msg_received,#cl_st{
@@ -152,12 +154,48 @@ do_leave(State, Ref, ChatName) ->
 %% executes `/nick` protocol from client perspective
 do_new_nick(State, Ref, NewNick) ->
     io:format("client:do_new_nick(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	Curr_Nick_Name = State#cl_st.nick,
+	io:format("Nick Name ~s~n",[Curr_Nick_Name]),
+	io:format("Nick Name New ~s~n",[NewNick]),
+	if Curr_Nick_Name == NewNick->
+		whereis(list_to_atom(State#cl_st.gui)) ! {result, self(),Ref, err_same},
+		Client_Curr_Nick_Name = Curr_Nick_Name;
+	true ->
+		whereis(server) ! {self(), Ref, nick, NewNick},
+		receive
+			{_,Ref,ok_nick}->
+				whereis(list_to_atom(State#cl_st.gui)) ! {result, self(), Ref, ok_nick},
+				Client_Curr_Nick_Name = NewNick;
+			{_,Ref,err_nick_used}->
+					whereis(list_to_atom(State#cl_st.gui))!{result, self(), Ref, err_nick_used},
+					Client_Curr_Nick_Name = State#cl_st.nick
+		end
+	end,
+
+    {ok_msg_received,#cl_st{
+		gui=State#cl_st.gui,
+		nick=Client_Curr_Nick_Name,
+		con_ch = State#cl_st.con_ch}}.
 
 %% executes send message protocol from client perspective
 do_msg_send(State, Ref, ChatName, Message) ->
     io:format("client:do_new_nick(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	Chatroom_Tuple = maps:find(ChatName,State#cl_st.con_ch),
+	case Chatroom_Tuple of
+		{ok,ChatroomPID}->
+			ChatroomPID!{self(), Ref, message, Message},
+			receive
+				{_, Ref, ack_msg}->
+					whereis(list_to_atom(State#cl_st.gui))!{result, self(), Ref, {msg_sent,State#cl_st.nick}}
+			end
+			;
+		error->
+			not_connected %To use a different code
+		end,
+		{ok_msg_received,State}.
+
+
+
 
 %% executes new incoming message protocol from client perspective
 do_new_incoming_msg(State, _Ref, CliNick, ChatName, Msg) ->
@@ -168,4 +206,9 @@ do_new_incoming_msg(State, _Ref, CliNick, ChatName, Msg) ->
 %% executes quit protocol from client perspective
 do_quit(State, Ref) ->
     io:format("client:do_new_nick(...): IMPLEMENT ME~n"),
+	whereis(server) ! {self(), Ref, quit},
+	receive
+		{_,Ref,ack_quit}->
+			whereis(list_to_atom(State#cl_st.gui))!{self(), Ref, ack_quit}
+	end,
     {{dummy_target, dummy_response}, State}.
